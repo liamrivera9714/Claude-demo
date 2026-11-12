@@ -25,6 +25,7 @@
   --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   background: var(--bg);
   color: var(--fg);
@@ -65,12 +66,14 @@ canvas { display: block; width: 100%; touch-action: manipulation; cursor: pointe
 button { font: inherit; color: var(--fg); background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 8px 10px; cursor: pointer; }
 button:hover:not(:disabled) { border-color: var(--brass); }
 button:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+button.small { padding: 2px 10px; font-size: 12px; border-radius: 999px; color: var(--muted); }
 button:disabled { opacity: .42; cursor: not-allowed; }
 .recruit button { text-align: left; line-height: 1.35; padding: 6px 8px; }
 .recruit button b { display: flex; justify-content: space-between; font-weight: 700; }
 .recruit button b em { font-style: normal; color: var(--brass); font-variant-numeric: tabular-nums; }
 .recruit button small { color: var(--muted); font-size: 11px; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.actions .primary { grid-column: 1 / -1; }
 .primary { background: var(--brass); border-color: var(--brass); color: #1b1608; font-weight: 700; }
 .primary:hover:not(:disabled) { filter: brightness(1.08); }
 .log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); min-height: 5.6em; }
@@ -100,6 +103,7 @@ select { font: inherit; color: var(--fg); background: var(--surface-2); border: 
       <span>每回合 <b id="sInc">+0</b></span>
     </div>
     <div class="chips" id="chips"></div>
+    <button id="mute" type="button" class="small">音效：开</button>
   </header>
 
   <div class="board">
@@ -116,6 +120,7 @@ select { font: inherit; color: var(--fg); background: var(--surface-2); border: 
       <section class="box" id="info" aria-live="polite"></section>
       <div class="actions">
         <button id="nextUnit" type="button">下一个单位</button>
+        <button id="undo" type="button">悔棋</button>
         <button id="endTurn" class="primary" type="button">结束回合</button>
       </div>
       <section class="box">
@@ -132,7 +137,11 @@ select { font: inherit; color: var(--fg); background: var(--surface-2); border: 
           <li>点自己的都城或城镇可以招兵，新兵下回合才能行动。</li>
           <li>森林移动耗 2 点、防御 +1；城镇防御 +1，都城防御 +2。山和水不能通行。</li>
           <li>单位在己方领地每回合回 2 血，在城里回 3 血。受伤越重，攻击越弱。</li>
-          <li>键盘：空格切换下一个单位，回车结束回合。</li>
+          <li>兵种相克：步兵克骑兵，骑兵克弓兵，弓兵克步兵，克制时攻击 +2。</li>
+          <li>击溃敌军的单位会晋升（最多两级），每级攻击 +1。</li>
+          <li>点自己都城或城镇旁的平原可以开垦农田（10 金，每回合 +2 金）。踏入敌方农田会劫掠 4 金并毁掉它。</li>
+          <li>点敌方单位可以看到它下回合的威胁范围；都城出现红色虚线圈，说明敌军下回合就能打到它。本回合内的操作都可以悔棋。</li>
+          <li>键盘：空格切换下一个单位，回车结束回合，Z 悔棋，Esc 取消选择。</li>
         </ul>
       </details>
       <section class="box">
@@ -157,11 +166,13 @@ select { font: inherit; color: var(--fg); background: var(--surface-2); border: 
 const COLS = 11, ROWS = 11, N = COLS * ROWS, S3 = Math.sqrt(3);
 const SAVE_KEY = 'fenghuo-v1';
 const UT = {
-  inf: { n: '步兵', ch: '步', cost: 10, hp: 10, atk: 6, def: 2, mv: 3, rng: 1, d: '均衡，脚程快' },
-  arc: { n: '弓兵', ch: '弓', cost: 14, hp: 8,  atk: 6, def: 1, mv: 2, rng: 2, d: '隔一格射击，不吃反击' },
-  cav: { n: '骑兵', ch: '骑', cost: 20, hp: 12, atk: 7, def: 2, mv: 4, rng: 1, d: '长途奔袭，抢城最快' },
+  inf: { n: '步兵', ch: '步', cost: 10, hp: 10, atk: 6, def: 2, mv: 3, rng: 1, d: '均衡，脚程快，克制骑兵' },
+  arc: { n: '弓兵', ch: '弓', cost: 14, hp: 8,  atk: 6, def: 1, mv: 2, rng: 2, d: '隔一格射击不吃反击，克制步兵' },
+  cav: { n: '骑兵', ch: '骑', cost: 20, hp: 12, atk: 7, def: 2, mv: 4, rng: 1, d: '长途奔袭，克制弓兵' },
   shd: { n: '盾卫', ch: '盾', cost: 16, hp: 14, atk: 5, def: 3, mv: 2, rng: 1, d: '皮糙肉厚，适合守城' },
 };
+const COUNTER = { inf: 'cav', arc: 'inf', cav: 'arc' };
+const FARM_COST = 10, FARM_INC = 2, PILLAGE = 4;
 const TCOST = { P: 1, F: 2, M: 0, W: 0 };
 const TNAME = { P: '平原', F: '森林', M: '山地', W: '湖泊' };
 const PLAYERS = [
@@ -178,6 +189,7 @@ let busy = false, lastSave = null;
 let sel = { unit: null, tile: -1 }, reach = new Map(), targets = new Map();
 const anim = new Map(), floaters = [];
 let dirty = true, size = 20, logs = [];
+let alarm = false, threat = new Set(), reachFull = new Map(), hover = -1, undoStack = [], FAST = false;
 
 const $ = id => document.getElementById(id);
 const cv = $('map'), ctx = cv.getContext('2d');
@@ -243,7 +255,7 @@ function newGame(opp, diff) {
     players: caps.map((cap, p) => ({ gold: 12, alive: true, cap })),
   };
   caps.forEach((cap, p) => S.units.push({ id: S.nextId++, owner: p, type: 'inf', pos: cap, hp: UT.inf.hp, moved: false, acted: false }));
-  logs = []; floaters.length = 0; anim.clear(); busy = false;
+  logs = []; floaters.length = 0; anim.clear(); busy = false; undoStack = [];
   clearSel();
   beginTurn(0);
   log('战事开启。先占领附近的城镇，扩充财源。');
@@ -257,7 +269,7 @@ const tbonus = i => { const t = S.tiles[i]; return (t.t === 'F' ? 1 : 0) + t.tow
 function income(p) {
   let towns = 0, land = 0;
   for (const t of S.tiles) if (t.owner === p) { land++; if (t.town === 1) towns++; }
-  let gross = 6 + 3 * towns + Math.floor(land / 4);
+  let gross = 6 + 3 * towns + Math.floor(land / 4) + FARM_INC * S.tiles.filter(t => t.owner === p && t.farm).length;
   if (p !== 0) gross = Math.round(gross * S.diff);
   return gross - S.units.filter(u => u.owner === p).length;
 }
@@ -283,13 +295,14 @@ function pathTo(res, i) {
   for (let c = i; res.get(c).prev >= 0; c = res.get(c).prev) path.unshift(c);
   return path;
 }
+const atkOf = (u, vs) => UT[u.type].atk + (u.lv || 0) + (COUNTER[u.type] === vs.type ? 2 : 0);
 function predict(a, d, apos) {
   const A = UT[a.type], D = UT[d.type];
-  const dmg = Math.max(1, Math.round(A.atk * (0.5 + 0.5 * a.hp / A.hp)) - D.def - tbonus(d.pos));
+  const dmg = Math.max(1, Math.round(atkOf(a, d) * (0.5 + 0.5 * a.hp / A.hp)) - D.def - tbonus(d.pos));
   const kill = dmg >= d.hp;
   let counter = 0;
   if (!kill && dist(apos, d.pos) <= D.rng)
-    counter = Math.max(1, Math.round(D.atk * (0.5 + 0.5 * (d.hp - dmg) / D.hp)) - A.def - tbonus(apos));
+    counter = Math.max(1, Math.round(atkOf(d, a) * (0.5 + 0.5 * (d.hp - dmg) / D.hp)) - A.def - tbonus(apos));
   return { dmg, kill, counter };
 }
 function targetsFor(u, pos) {
@@ -301,16 +314,17 @@ function claim(i, p) {
   const t = S.tiles[i], prev = t.owner;
   if (prev === p) return;
   t.owner = p;
+  if (t.farm) { t.farm = false; S.players[p].gold += PILLAGE; floater(i, '+' + PILLAGE + '金', '#ffe9a8'); log(`${PLAYERS[p].name}劫掠了${PLAYERS[prev].name}的农田，夺得 ${PILLAGE} 金。`); sfx.coin(); }
   if (t.town === 2) { t.town = 1; eliminate(prev, p); }
-  else if (t.town === 1) log(`${PLAYERS[p].name}占领了一座城镇。`);
+  else if (t.town === 1) { log(`${PLAYERS[p].name}占领了一座城镇。`); sfx.town(); }
 }
 function eliminate(loser, winner) {
   S.players[loser].alive = false;
   for (const t of S.tiles) if (t.owner === loser) t.owner = winner;
   S.units = S.units.filter(u => u.owner !== loser);
   log(`${PLAYERS[winner].name}攻陷了${PLAYERS[loser].name}的都城，${PLAYERS[loser].name}${loser === 0 ? '战败' : '覆灭'}。`);
-  if (!S.players[0].alive) S.over = 'lose';
-  else if (S.players.filter(p => p.alive).length === 1) S.over = 'win';
+  if (!S.players[0].alive) { S.over = 'lose'; sfx.lose(); }
+  else if (S.players.filter(p => p.alive).length === 1) { S.over = 'win'; sfx.win(); }
 }
 function spawnSpot(i, p) {
   const occ = occMap();
@@ -326,6 +340,30 @@ function recruit(p, type, at) {
   dirty = true;
   return true;
 }
+function canFarm(p, i) {
+  const t = S.tiles[i];
+  return t.owner === p && t.t === 'P' && !t.town && !t.farm && NB[i].some(n => n >= 0 && S.tiles[n].town && S.tiles[n].owner === p);
+}
+function buildFarm(p, i) {
+  if (!canFarm(p, i) || S.players[p].gold < FARM_COST) return false;
+  S.players[p].gold -= FARM_COST; S.tiles[i].farm = true; dirty = true;
+  return true;
+}
+function promote(u) {
+  if ((u.lv || 0) >= 2) return;
+  u.lv = (u.lv || 0) + 1;
+  floater(u.pos, '晋升', '#ffe9a8');
+  if (u.owner === 0) log(`你的${UT[u.type].n}立下战功，晋升为${u.lv === 2 ? '精锐' : '老兵'}（攻击 +1）。`);
+}
+function threatOf(e) {
+  const occ = occMap(), set = new Set(), rng = UT[e.type].rng;
+  for (const i of reachable(e).keys()) {
+    const o = occ.get(i);
+    if (o && o !== e) continue;
+    for (let j = 0; j < N; j++) if (dist(i, j) <= rng) set.add(j);
+  }
+  return set;
+}
 function beginTurn(p) {
   const pl = S.players[p];
   pl.gold = Math.max(0, pl.gold + income(p));
@@ -337,10 +375,36 @@ function beginTurn(p) {
   dirty = true;
 }
 
+/* ---------- 音效 ---------- */
+let actx = null, muted = false;
+try { muted = localStorage.getItem('fenghuo-mute') === '1'; } catch (e) { /* 忽略 */ }
+function tone(f, d, type = 'triangle', v = 0.07, when = 0, slide = 0) {
+  if (muted || FAST) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const t = actx.currentTime + when, o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + d);
+    g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.001, t + d);
+    o.connect(g).connect(actx.destination); o.start(t); o.stop(t + d + 0.02);
+  } catch (e) { /* 没有声音也能玩 */ }
+}
+const sfx = {
+  step: () => tone(520, 0.05, 'sine', 0.035),
+  hit: () => tone(190, 0.16, 'sawtooth', 0.08, 0, 70),
+  die: () => tone(150, 0.3, 'square', 0.06, 0, 50),
+  coin: () => { tone(880, 0.08); tone(1320, 0.12, 'triangle', 0.07, 0.07); },
+  town: () => { tone(523, 0.1); tone(659, 0.1, 'triangle', 0.07, 0.1); tone(784, 0.2, 'triangle', 0.07, 0.2); },
+  turn: () => { tone(587, 0.1, 'sine', 0.05); tone(784, 0.14, 'sine', 0.05, 0.1); },
+  win: () => [523, 659, 784, 1047].forEach((f, k) => tone(f, 0.25, 'triangle', 0.08, k * 0.14)),
+  lose: () => [392, 330, 262, 196].forEach((f, k) => tone(f, 0.3, 'triangle', 0.08, k * 0.18)),
+};
+
 /* ---------- 动作（带动画） ---------- */
-const sleep = ms => new Promise(r => setTimeout(r, reduced ? Math.min(ms, 20) : ms));
+const sleep = ms => FAST ? Promise.resolve() : new Promise(r => setTimeout(r, reduced ? Math.min(ms, 20) : ms));
 function tween(u, from, to, ms) {
-  if (reduced) return Promise.resolve();
+  if (reduced || FAST) return Promise.resolve();
   return new Promise(res => {
     const t0 = performance.now(), [x0, y0] = center(from), [x1, y1] = center(to);
     const f = now => {
@@ -355,24 +419,25 @@ async function doMove(u, path) {
   for (const step of path) {
     await tween(u, u.pos, step, 80);
     u.pos = step;
+    if (u.owner === 0) sfx.step();
     claim(step, u.owner);
     dirty = true;
     if (S.over) break;
   }
   u.moved = true;
 }
-function floater(i, text, color) { floaters.push({ i, text, color, t0: performance.now() }); }
+function floater(i, text, color) { if (FAST) return; floaters.push({ i, text, color, t0: performance.now() }); }
 async function attack(a, d) {
   const pr = predict(a, d, a.pos);
-  d.hp -= pr.dmg; floater(d.pos, '-' + pr.dmg, '#ffd9cf');
+  d.hp -= pr.dmg; floater(d.pos, '-' + pr.dmg, '#ffd9cf'); sfx.hit();
   if (d.hp <= 0) {
-    S.units = S.units.filter(u => u !== d);
+    S.units = S.units.filter(u => u !== d); sfx.die(); promote(a);
     log(`${PLAYERS[a.owner].name}的${UT[a.type].n}击溃了${PLAYERS[d.owner].name}的${UT[d.type].n}。`);
   } else if (pr.counter) {
     await sleep(160);
-    a.hp -= pr.counter; floater(a.pos, '-' + pr.counter, '#ffd9cf');
+    a.hp -= pr.counter; floater(a.pos, '-' + pr.counter, '#ffd9cf'); sfx.hit();
     if (a.hp <= 0) {
-      S.units = S.units.filter(u => u !== a);
+      S.units = S.units.filter(u => u !== a); sfx.die(); promote(d);
       log(`${PLAYERS[a.owner].name}的${UT[a.type].n}进攻失利，被反击歼灭。`);
     }
   }
@@ -434,6 +499,11 @@ async function aiTurn(p) {
   // 招兵：保证军饷付得起
   const bases = S.tiles.map((t, i) => (t.town && t.owner === p ? i : -1)).filter(i => i >= 0)
     .sort((a, b) => td[a] - td[b]);
+  const farmOnce = () => {
+    const spots = S.tiles.map((t, i) => (canFarm(p, i) ? i : -1)).filter(i => i >= 0).sort((a, b) => td[b] - td[a]);
+    return spots.length > 0 && buildFarm(p, spots[0]);
+  };
+  if (S.units.filter(u => u.owner === p).length >= 3 && Math.random() < 0.4) farmOnce();
   const weights = { inf: 4, arc: 3, cav: 2, shd: 2 };
   for (let guard = 0; guard < 8; guard++) {
     if (income(p) < 2 || S.units.filter(u => u.owner === p).length >= 14) break;
@@ -444,13 +514,14 @@ async function aiTurn(p) {
     for (const k of can) { r -= weights[k]; if (r <= 0) { pick = k; break; } }
     recruit(p, pick, base);
   }
+  for (let k = 0; k < 2 && pl.gold >= FARM_COST + 6; k++) if (!farmOnce()) break;
   ui(); await sleep(120);
 }
 
 /* ---------- 回合流程 ---------- */
 async function endTurn() {
   if (busy || S.over || S.cur !== 0) return;
-  busy = true; clearSel(); ui();
+  busy = true; clearSel(); undoStack = []; ui();
   for (;;) {
     do { S.cur = (S.cur + 1) % S.players.length; if (S.cur === 0) S.turn++; } while (!S.players[S.cur].alive);
     beginTurn(S.cur);
@@ -460,15 +531,25 @@ async function endTurn() {
     if (S.over) break;
   }
   busy = false;
-  if (!S.over) log(`第 ${S.turn} 回合，轮到你了。`);
+  if (!S.over) {
+    log(`第 ${S.turn} 回合，轮到你了。`); sfx.turn();
+    if (S.units.some(e => e.owner !== 0 && threatOf(e).has(S.players[0].cap))) log('警报：敌军下回合就能打到你的都城！');
+  }
   save(); ui();
 }
 
 /* ---------- 玩家操作 ---------- */
-function clearSel() { sel = { unit: null, tile: -1 }; reach = new Map(); targets = new Map(); dirty = true; }
+function clearSel() { sel = { unit: null, tile: -1 }; reach = new Map(); reachFull = new Map(); targets = new Map(); threat = new Set(); dirty = true; }
+function pushUndo() { undoStack.push(JSON.stringify(S)); if (undoStack.length > 40) undoStack.shift(); }
+function undo() {
+  if (busy || !S || S.over || S.cur !== 0 || !undoStack.length) return;
+  S = JSON.parse(undoStack.pop()); clearSel(); log('撤销了上一步。'); save(); ui();
+}
 function selectUnit(u) {
   sel = { unit: u.id, tile: u.pos };
-  reach = u.moved ? new Map() : reachable(u);
+  threat = new Set();
+  reachFull = u.moved ? new Map() : reachable(u);
+  reach = new Map(reachFull);
   const occ = occMap();
   for (const i of [...reach.keys()]) if (occ.has(i)) reach.delete(i);
   targets = targetsFor(u, u.pos);
@@ -478,11 +559,11 @@ async function onTile(i) {
   if (busy || !S || S.over || S.cur !== 0) return;
   const u = S.units.find(x => x.id === sel.unit), here = unitAt(i);
   if (u && targets.has(i) && here) {
-    busy = true; const a = u; clearSel();
+    pushUndo(); busy = true; const a = u; clearSel();
     await attack(a, here);
     busy = false;
   } else if (u && reach.has(i)) {
-    busy = true; const path = pathTo(reachable(u), i); clearSel();
+    pushUndo(); busy = true; const path = pathTo(reachable(u), i); clearSel();
     await doMove(u, path);
     busy = false;
     if (!S.over && S.units.includes(u)) {
@@ -494,6 +575,7 @@ async function onTile(i) {
     clearSel();
   } else {
     clearSel(); sel.tile = i;
+    if (here && here.owner !== 0) threat = threatOf(here);
   }
   save(); ui();
 }
@@ -515,7 +597,7 @@ function load(raw) {
   try {
     const s = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (!s || s.v !== 1 || s.cur !== 0 || !Array.isArray(s.tiles) || s.tiles.length !== N) return false;
-    S = s; lastSave = JSON.stringify(S); logs = []; clearSel();
+    S = s; lastSave = JSON.stringify(S); logs = []; undoStack = []; clearSel();
     log(S.over ? '上一局已经结束。' : `读取存档：第 ${S.turn} 回合。`);
     return true;
   } catch (e) { return false; }
@@ -537,22 +619,27 @@ function ui() {
   $('log').innerHTML = logs.map(l => `<li>${esc(l)}</li>`).join('');
 
   const myTurn = S.cur === 0 && !busy && !S.over;
+  if (myTurn) alarm = S.units.some(e => e.owner !== 0 && threatOf(e).has(S.players[0].cap));
+  else if (S.over) alarm = false;
   const idle = S.units.filter(u => u.owner === 0 && !u.acted).length;
   $('endTurn').disabled = !myTurn;
   $('endTurn').textContent = myTurn ? '结束回合' : S.over ? '已结束' : '敌方行动中…';
   $('nextUnit').disabled = !myTurn || !idle;
   $('nextUnit').textContent = idle ? `下一个单位（${idle}）` : '全员已行动';
+  $('undo').disabled = !myTurn || !undoStack.length;
+  $('mute').textContent = muted ? '音效：关' : '音效：开';
 
   // 选中信息
   let html = '';
   const u = sel.tile >= 0 ? unitAt(sel.tile) : null, t = sel.tile >= 0 ? S.tiles[sel.tile] : null;
   if (u) {
     const T = UT[u.type];
-    html += `<h2 style="color:${PLAYERS[u.owner].color}">${PLAYERS[u.owner].name}的${T.n}</h2><p>${T.d}。${u.owner === 0 ? (u.acted ? '本回合已行动。' : u.moved ? '已移动，还可以进攻。' : '点亮起的格子移动，点红圈进攻。') : ''}</p>
-      <div class="kv"><div><span>生命</span>${u.hp}/${T.hp}</div><div><span>攻击</span>${T.atk}</div><div><span>防御</span>${T.def}+${tbonus(u.pos)}</div><div><span>${T.rng > 1 ? '射程' : '移动'}</span>${T.rng > 1 ? T.rng : T.mv}</div></div>`;
+    const rank = ['', '老兵', '精锐'][u.lv || 0];
+    html += `<h2 style="color:${PLAYERS[u.owner].color}">${PLAYERS[u.owner].name}的${rank}${T.n}</h2><p>${T.d}。${u.owner === 0 ? (u.acted ? '本回合已行动。' : u.moved ? '已移动，还可以进攻。' : '点亮起的格子移动，点红圈进攻。') : '红色区域是它下回合能打到的范围。'}</p>
+      <div class="kv"><div><span>生命</span>${u.hp}/${T.hp}</div><div><span>攻击</span>${T.atk + (u.lv || 0)}</div><div><span>防御</span>${T.def}+${tbonus(u.pos)}</div><div><span>${T.rng > 1 ? '射程' : '移动'}</span>${T.rng > 1 ? T.rng : T.mv}</div></div>`;
   } else if (t) {
     const who = t.owner >= 0 ? PLAYERS[t.owner].name + '的' : '无主的';
-    html += `<h2>${who}${t.town === 2 ? '都城' : t.town === 1 ? '城镇' : TNAME[t.t]}</h2><p>${t.town === 2 ? '每回合 6 金，防御 +2。失守即灭国。' : t.town === 1 ? '每回合 3 金，防御 +1，可以招兵。' : t.t === 'F' ? '进入耗 2 点移动力，防御 +1。' : TCOST[t.t] ? '一马平川，无遮无拦。' : '无法通行。'}</p>`;
+    html += `<h2>${who}${t.town === 2 ? '都城' : t.town === 1 ? '城镇' : t.farm ? '农田' : TNAME[t.t]}</h2><p>${t.farm ? `每回合 ${FARM_INC} 金。敌军踏入会被劫掠一空。` : t.town === 2 ? '每回合 6 金，防御 +2。失守即灭国。' : t.town === 1 ? '每回合 3 金，防御 +1，可以招兵。' : t.t === 'F' ? '进入耗 2 点移动力，防御 +1。' : TCOST[t.t] ? '一马平川，无遮无拦。' : '无法通行。'}</p>`;
   } else {
     html += `<h2>军令</h2><p>${S.over ? '本局已结束，可以在下方重新开始。' : '点自己的单位下达命令，点自己的都城或城镇招兵。'}</p>`;
   }
@@ -562,6 +649,11 @@ function ui() {
       const T = UT[k], ok = myTurn && room && me.gold >= T.cost;
       return `<button type="button" data-recruit="${k}" ${ok ? '' : 'disabled'}><b>${T.n}<em>${T.cost} 金</em></b><small>血${T.hp} 攻${T.atk} 防${T.def} 移${T.mv}${T.rng > 1 ? ' 射' + T.rng : ''}</small></button>`;
     }).join('') + `</div>` + (room ? '' : `<p style="margin-top:6px">城里和周围都站满了，先把部队调开。</p>`);
+  }
+  if (t && t.owner === 0 && t.t === 'P' && !t.town && !t.farm) {
+    html += canFarm(0, sel.tile)
+      ? `<div class="recruit" style="grid-template-columns:1fr"><button type="button" data-farm="1" ${myTurn && me.gold >= FARM_COST ? '' : 'disabled'}><b>开垦农田<em>${FARM_COST} 金</em></b><small>每回合 +${FARM_INC} 金，被敌军踏入会被劫掠</small></button></div>`
+      : `<p style="margin-top:6px">农田只能开在自己都城或城镇的邻格。</p>`;
   }
   $('info').innerHTML = html;
 
@@ -601,6 +693,10 @@ function draw() {
       ctx.strokeStyle = 'rgba(190,225,255,.45)'; ctx.lineWidth = Math.max(1, s * .06);
       for (const dy of [-.18, .2]) { ctx.beginPath(); ctx.moveTo(x - s * .4, y + s * dy); ctx.quadraticCurveTo(x - s * .2, y + s * (dy - .14), x, y + s * dy); ctx.quadraticCurveTo(x + s * .2, y + s * (dy + .14), x + s * .4, y + s * dy); ctx.stroke(); }
     }
+    if (t.farm) {
+      ctx.strokeStyle = '#ecd67c'; ctx.lineWidth = Math.max(1, s * .08);
+      for (const dy of [-.3, -.1, .1, .3]) { ctx.beginPath(); ctx.moveTo(x - s * .45, y + s * dy); ctx.lineTo(x + s * .45, y + s * dy); ctx.stroke(); }
+    }
     if (t.town) {
       hexPath(x, y, s * 0.8); ctx.strokeStyle = t.town === 2 ? '#f2cf62' : '#efe6cc'; ctx.lineWidth = t.town === 2 ? Math.max(2, s * .12) : Math.max(1.2, s * .07); ctx.stroke();
       ctx.fillStyle = '#f3ead0';
@@ -626,6 +722,9 @@ function draw() {
       ctx.beginPath(); ctx.moveTo(x + r * Math.cos(a0), y + r * Math.sin(a0)); ctx.lineTo(x + r * Math.cos(a1), y + r * Math.sin(a1)); ctx.stroke();
     }
   }
+  if (alarm) { const [x, y] = center(S.players[0].cap); hexPath(x, y, s * 1.02); ctx.strokeStyle = '#ff4d3a'; ctx.lineWidth = Math.max(2.5, s * .16); ctx.setLineDash([s * .3, s * .22]); ctx.stroke(); ctx.setLineDash([]); }
+  // 敌军威胁范围
+  for (const i of threat) { const [x, y] = center(i); hexPath(x, y, s * .97); ctx.fillStyle = 'rgba(255,70,50,.3)'; ctx.fill(); }
   // 可移动与可攻击标记
   for (const i of reach.keys()) {
     const [x, y] = center(i);
@@ -633,6 +732,11 @@ function draw() {
     ctx.beginPath(); ctx.arc(x, y, s * .13, 0, 7); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fill();
   }
   if (sel.tile >= 0) { const [x, y] = center(sel.tile); hexPath(x, y, s * .93); ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(2, s * .1); ctx.stroke(); }
+  if (hover >= 0 && reach.has(hover) && sel.tile >= 0) {
+    ctx.beginPath(); ctx.moveTo(...center(sel.tile));
+    for (const i of pathTo(reachFull, hover)) ctx.lineTo(...center(i));
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = Math.max(2, s * .14); ctx.stroke();
+  }
   // 单位
   const fs = Math.max(10, s * .62);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -646,6 +750,10 @@ function draw() {
     ctx.fillStyle = '#0c1616'; ctx.font = `700 ${fs}px "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif`;
     ctx.fillText(T.ch, cx, cy + fs * .04);
     ctx.globalAlpha = 1;
+    for (let k = 0; k < (u.lv || 0); k++) {
+      ctx.beginPath(); ctx.arc(cx - s * .16 * ((u.lv || 0) - 1) + k * s * .32, cy - s * .56, s * .13, 0, 7);
+      ctx.fillStyle = '#ffd75e'; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = '#0c1616'; ctx.stroke();
+    }
     if (u.hp < T.hp) {
       const w = s * 1.0, h = Math.max(3, s * .16), bx = cx - w / 2, by = cy + s * .5;
       ctx.fillStyle = '#0c1616'; ctx.fillRect(bx - 1, by - 1, w + 2, h + 2);
@@ -689,18 +797,36 @@ function frame() {
 }
 
 /* ---------- 事件 ---------- */
-cv.addEventListener('click', e => {
+function tileAt(e) {
   const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
   let best = -1, bd = size * size;
   for (let i = 0; i < N; i++) { const [cx, cy] = center(i), d = (cx - x) ** 2 + (cy - y) ** 2; if (d < bd) { bd = d; best = i; } }
-  if (best >= 0) onTile(best);
-});
+  return best;
+}
+cv.addEventListener('click', e => { const i = tileAt(e); if (i >= 0) onTile(i); });
 $('info').addEventListener('click', e => {
   const b = e.target.closest('[data-recruit]');
   if (!b || busy || S.over || S.cur !== 0) return;
   const type = b.dataset.recruit;
-  if (recruit(0, type, sel.tile)) { log(`招募了一队${UT[type].n}，下回合可以行动。`); save(); ui(); }
+  pushUndo();
+  if (recruit(0, type, sel.tile)) { log(`招募了一队${UT[type].n}，下回合可以行动。`); sfx.coin(); save(); ui(); } else undoStack.pop();
 });
+$('info').addEventListener('click', e => {
+  if (!e.target.closest('[data-farm]') || busy || S.over || S.cur !== 0) return;
+  pushUndo();
+  if (buildFarm(0, sel.tile)) { log('开垦了一块农田。'); sfx.coin(); save(); ui(); } else undoStack.pop();
+});
+$('undo').addEventListener('click', undo);
+$('mute').addEventListener('click', () => {
+  muted = !muted;
+  try { localStorage.setItem('fenghuo-mute', muted ? '1' : '0'); } catch (e) { /* 忽略 */ }
+  if (!muted) sfx.coin();
+  ui();
+});
+cv.addEventListener('mousemove', e => {
+  const i = tileAt(e); if (i !== hover) { hover = i; dirty = true; }
+});
+cv.addEventListener('mouseleave', () => { hover = -1; dirty = true; });
 $('endTurn').addEventListener('click', endTurn);
 $('nextUnit').addEventListener('click', nextUnit);
 let armed = 0;
@@ -717,6 +843,7 @@ document.addEventListener('keydown', e => {
   if (e.key === ' ') { e.preventDefault(); nextUnit(); }
   else if (e.key === 'Enter') endTurn();
   else if (e.key === 'Escape') { clearSel(); ui(); }
+  else if (e.key === 'z' || e.key === 'Z') undo();
 });
 new ResizeObserver(resize).observe($('mapwrap'));
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { dirty = true; });
@@ -727,6 +854,16 @@ function start(data) {
   if (!ok) restart();
   resize(); ui(); requestAnimationFrame(frame);
 }
+// 自动对战入口，仅用于测试平衡
+window.__fenghuo = {
+  get state() { return S; },
+  async auto(opp, diff, maxTurns) {
+    FAST = true; newGame(opp, diff);
+    while (!S.over && S.turn < maxTurns) { busy = true; await aiTurn(0); busy = false; if (!S.over) await endTurn(); }
+    FAST = false; ui();
+    return { over: S.over, turn: S.turn, alive: S.players.filter(p => p.alive).length };
+  },
+};
 const hot = window.claude && window.claude.hot;
 if (hot && hot.snapshot) hot.snapshot(() => ({ save: lastSave }));
 if (hot && hot.ready) hot.ready(start); else start((hot && hot.data) || {});
