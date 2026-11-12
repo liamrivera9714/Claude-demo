@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>烽火疆域</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+/* 布局：沙盘（六角地图）居左为主角，右侧一列军令面板；窄屏时面板落到地图下方。单一深色主题。 */
+:root {
+  color-scheme: dark;
+  --bg: #111e1d;
+  --surface: #19292a;
+  --surface-2: #213536;
+  --line: #2f4a49;
+  --fg: #e7ede3;
+  --muted: #92a6a0;
+  --brass: #e0b548;
+  --danger: #e8604a;
+  --p0: #4f9dff;
+  --font-display: "ZCOOL XiaoWei", "Songti SC", "STSong", "SimSun", serif;
+  --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.55;
+  padding-block: 14px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.app { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 20px; }
+h1 { font-family: var(--font-display); font-weight: 400; font-size: 30px; letter-spacing: .12em; margin: 0; color: var(--brass); line-height: 1.1; }
+.stats { display: flex; flex-wrap: wrap; gap: 4px 18px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.stats b { color: var(--fg); font-weight: 700; font-size: 16px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chip i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+.chip.on { color: var(--fg); border-color: var(--c); }
+.chip.dead { text-decoration: line-through; opacity: .5; }
+
+.board { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+.mapwrap { position: relative; width: 100%; max-width: calc((100vh - 110px) * 1.17); min-width: 0; justify-self: center; }
+canvas { display: block; width: 100%; touch-action: manipulation; cursor: pointer; border-radius: 6px; }
+.banner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(10, 18, 18, .78); border-radius: 6px; text-align: center; padding: 16px; }
+.banner h2 { font-family: var(--font-display); font-weight: 400; font-size: 44px; letter-spacing: .2em; margin: 0; color: var(--brass); }
+.banner.lose h2 { color: var(--danger); }
+.banner p { margin: 0; color: var(--fg); }
+
+.panel { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.box { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px; }
+.box h2 { font-family: var(--font-display); font-weight: 400; font-size: 18px; letter-spacing: .08em; margin: 0 0 6px; }
+.box p { margin: 0; color: var(--muted); }
+.kv { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.kv div { background: var(--surface-2); border-radius: 4px; padding: 4px 6px; text-align: center; }
+.kv span { display: block; font-size: 11px; color: var(--muted); }
+.recruit { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+button { font: inherit; color: var(--fg); background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 8px 10px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--brass); }
+button:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+button:disabled { opacity: .42; cursor: not-allowed; }
+.recruit button { text-align: left; line-height: 1.35; padding: 6px 8px; }
+.recruit button b { display: flex; justify-content: space-between; font-weight: 700; }
+.recruit button b em { font-style: normal; color: var(--brass); font-variant-numeric: tabular-nums; }
+.recruit button small { color: var(--muted); font-size: 11px; }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.primary { background: var(--brass); border-color: var(--brass); color: #1b1608; font-weight: 700; }
+.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); min-height: 5.6em; }
+.log li:first-child { color: var(--fg); }
+details summary { cursor: pointer; font-family: var(--font-display); font-size: 16px; letter-spacing: .08em; }
+details ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+details li + li { margin-top: 3px; }
+.setup { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.setup label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+select { font: inherit; color: var(--fg); background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 6px; }
+.setup button { grid-column: 1 / -1; }
+
+@media (max-width: 860px) {
+  .board { grid-template-columns: minmax(0, 1fr); }
+  .mapwrap { max-width: 100%; }
+  h1 { font-size: 26px; }
+  .chips { margin-left: 0; }
+}
+</style>
+
+<div class="app">
+  <header class="top">
+    <h1>烽火疆域</h1>
+    <div class="stats" aria-live="polite">
+      <span>回合 <b id="sTurn">1</b></span>
+      <span>金币 <b id="sGold">0</b></span>
+      <span>每回合 <b id="sInc">+0</b></span>
+    </div>
+    <div class="chips" id="chips"></div>
+  </header>
+
+  <div class="board">
+    <div class="mapwrap" id="mapwrap">
+      <canvas id="map" aria-label="六角格战场地图"></canvas>
+      <div class="banner" id="banner" hidden>
+        <h2 id="bannerTitle"></h2>
+        <p id="bannerText"></p>
+        <button class="primary" id="bannerBtn" type="button">再来一局</button>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <section class="box" id="info" aria-live="polite"></section>
+      <div class="actions">
+        <button id="nextUnit" type="button">下一个单位</button>
+        <button id="endTurn" class="primary" type="button">结束回合</button>
+      </div>
+      <section class="box">
+        <h2>战报</h2>
+        <ul class="log" id="log"></ul>
+      </section>
+      <details class="box">
+        <summary>怎么玩</summary>
+        <ul>
+          <li>你是蓝方。攻下所有敌方都城即获胜，自己的都城被占则失败。</li>
+          <li>点自己的单位，再点亮起的格子移动；点红圈里的敌人进攻，圈旁数字是预计伤害。</li>
+          <li>每个单位每回合可以移动一次、进攻一次，进攻后本回合结束行动。</li>
+          <li>走过的格子归你所有。都城每回合 6 金，城镇 3 金，每 4 格领地 1 金，每个单位军饷 1 金。</li>
+          <li>点自己的都城或城镇可以招兵，新兵下回合才能行动。</li>
+          <li>森林移动耗 2 点、防御 +1；城镇防御 +1，都城防御 +2。山和水不能通行。</li>
+          <li>单位在己方领地每回合回 2 血，在城里回 3 血。受伤越重，攻击越弱。</li>
+          <li>键盘：空格切换下一个单位，回车结束回合。</li>
+        </ul>
+      </details>
+      <section class="box">
+        <h2>新开一局</h2>
+        <div class="setup">
+          <label for="optOpp">对手数量
+            <select id="optOpp"><option value="1">1 个</option><option value="2" selected>2 个</option><option value="3">3 个</option></select>
+          </label>
+          <label for="optDiff">难度
+            <select id="optDiff"><option value="0.75">简单</option><option value="1" selected>普通</option><option value="1.35">困难</option></select>
+          </label>
+          <button id="newGame" type="button">重新开始</button>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+const COLS = 11, ROWS = 11, N = COLS * ROWS, S3 = Math.sqrt(3);
+const SAVE_KEY = 'fenghuo-v1';
+const UT = {
+  inf: { n: '步兵', ch: '步', cost: 10, hp: 10, atk: 6, def: 2, mv: 3, rng: 1, d: '均衡，脚程快' },
+  arc: { n: '弓兵', ch: '弓', cost: 14, hp: 8,  atk: 6, def: 1, mv: 2, rng: 2, d: '隔一格射击，不吃反击' },
+  cav: { n: '骑兵', ch: '骑', cost: 20, hp: 12, atk: 7, def: 2, mv: 4, rng: 1, d: '长途奔袭，抢城最快' },
+  shd: { n: '盾卫', ch: '盾', cost: 16, hp: 14, atk: 5, def: 3, mv: 2, rng: 1, d: '皮糙肉厚，适合守城' },
+};
+const TCOST = { P: 1, F: 2, M: 0, W: 0 };
+const TNAME = { P: '平原', F: '森林', M: '山地', W: '湖泊' };
+const PLAYERS = [
+  { name: '你', color: '#4f9dff' },
+  { name: '赤焰', color: '#e8604a' },
+  { name: '金沙', color: '#e3b341' },
+  { name: '紫霄', color: '#b583ec' },
+];
+const CAPS = [[1, 9], [9, 1], [9, 9], [1, 1]];
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let S = null;            // 可序列化的对局状态
+let busy = false, lastSave = null;
+let sel = { unit: null, tile: -1 }, reach = new Map(), targets = new Map();
+const anim = new Map(), floaters = [];
+let dirty = true, size = 20, logs = [];
+
+const $ = id => document.getElementById(id);
+const cv = $('map'), ctx = cv.getContext('2d');
+
+/* ---------- 六角格几何 ---------- */
+const idx = (c, r) => r * COLS + c;
+const NB_EVEN = [[1, 0], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1]];
+const NB_ODD  = [[1, 0], [1, 1], [0, 1], [-1, 0], [0, -1], [1, -1]];
+const NB = Array.from({ length: N }, (_, i) => {
+  const c = i % COLS, r = (i / COLS) | 0;
+  return (r & 1 ? NB_ODD : NB_EVEN).map(([dc, dr]) => {
+    const x = c + dc, y = r + dr;
+    return x < 0 || y < 0 || x >= COLS || y >= ROWS ? -1 : idx(x, y);
+  });
+});
+function dist(a, b) {
+  const ar = (a / COLS) | 0, br = (b / COLS) | 0;
+  const aq = a % COLS - ((ar - (ar & 1)) >> 1), bq = b % COLS - ((br - (br & 1)) >> 1);
+  const dq = aq - bq, dr = ar - br;
+  return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr));
+}
+function center(i) {
+  const c = i % COLS, r = (i / COLS) | 0;
+  return [size * S3 * (c + 0.5 + 0.5 * (r & 1)), size * (1 + 1.5 * r)];
+}
+
+/* ---------- 开局与地图生成 ---------- */
+function rng32(a) {
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function genMap(nPlayers, seed) {
+  for (;; seed++) {
+    const rnd = rng32(seed);
+    const tiles = Array.from({ length: N }, () => {
+      const v = rnd();
+      return { t: v < 0.11 ? 'M' : v < 0.2 ? 'W' : v < 0.42 ? 'F' : 'P', owner: -1, town: 0 };
+    });
+    const caps = CAPS.slice(0, nPlayers).map(([c, r]) => idx(c, r));
+    caps.forEach((ci, p) => {
+      tiles[ci] = { t: 'P', owner: p, town: 2 };
+      NB[ci].forEach(n => { if (n >= 0) { tiles[n].t = 'P'; tiles[n].owner = p; } });
+    });
+    const mid = idx(5, 5);
+    tiles[mid].t = 'P'; tiles[mid].town = 1;
+    const towns = [mid];
+    for (let tries = 0; tries < 400 && towns.length < 8; tries++) {
+      const i = (rnd() * N) | 0;
+      if (tiles[i].t !== 'P' || tiles[i].town) continue;
+      if (caps.some(c => dist(c, i) < 3) || towns.some(t => dist(t, i) < 3)) continue;
+      tiles[i].town = 1; towns.push(i);
+    }
+    if (towns.length < 6) continue;
+    const seen = new Set([caps[0]]), q = [caps[0]];
+    while (q.length) for (const n of NB[q.pop()]) if (n >= 0 && TCOST[tiles[n].t] && !seen.has(n)) { seen.add(n); q.push(n); }
+    if (caps.concat(towns).every(i => seen.has(i))) return { tiles, caps };
+  }
+}
+function newGame(opp, diff) {
+  const n = opp + 1;
+  const { tiles, caps } = genMap(n, (Math.random() * 1e9) | 0);
+  S = {
+    v: 1, turn: 1, cur: 0, over: null, diff, nextId: 1, tiles, units: [],
+    players: caps.map((cap, p) => ({ gold: 12, alive: true, cap })),
+  };
+  caps.forEach((cap, p) => S.units.push({ id: S.nextId++, owner: p, type: 'inf', pos: cap, hp: UT.inf.hp, moved: false, acted: false }));
+  logs = []; floaters.length = 0; anim.clear(); busy = false;
+  clearSel();
+  beginTurn(0);
+  log('战事开启。先占领附近的城镇，扩充财源。');
+  save(); ui();
+}
+
+/* ---------- 规则 ---------- */
+const occMap = () => new Map(S.units.map(u => [u.pos, u]));
+const unitAt = i => S.units.find(u => u.pos === i);
+const tbonus = i => { const t = S.tiles[i]; return (t.t === 'F' ? 1 : 0) + t.town; };
+function income(p) {
+  let towns = 0, land = 0;
+  for (const t of S.tiles) if (t.owner === p) { land++; if (t.town === 1) towns++; }
+  let gross = 6 + 3 * towns + Math.floor(land / 4);
+  if (p !== 0) gross = Math.round(gross * S.diff);
+  return gross - S.units.filter(u => u.owner === p).length;
+}
+function reachable(u) {
+  const occ = occMap(), mv = UT[u.type].mv, res = new Map([[u.pos, { cost: 0, prev: -1 }]]), open = [u.pos];
+  while (open.length) {
+    const cur = open.shift(), cc = res.get(cur).cost;
+    for (const n of NB[cur]) {
+      if (n < 0) continue;
+      const tc = TCOST[S.tiles[n].t];
+      if (!tc) continue;
+      const o = occ.get(n);
+      if (o && o.owner !== u.owner) continue;
+      const nc = cc + tc, e = res.get(n);
+      if (nc > mv || (e && e.cost <= nc)) continue;
+      res.set(n, { cost: nc, prev: cur }); open.push(n);
+    }
+  }
+  return res;
+}
+function pathTo(res, i) {
+  const path = [];
+  for (let c = i; res.get(c).prev >= 0; c = res.get(c).prev) path.unshift(c);
+  return path;
+}
+function predict(a, d, apos) {
+  const A = UT[a.type], D = UT[d.type];
+  const dmg = Math.max(1, Math.round(A.atk * (0.5 + 0.5 * a.hp / A.hp)) - D.def - tbonus(d.pos));
+  const kill = dmg >= d.hp;
+  let counter = 0;
+  if (!kill && dist(apos, d.pos) <= D.rng)
+    counter = Math.max(1, Math.round(D.atk * (0.5 + 0.5 * (d.hp - dmg) / D.hp)) - A.def - tbonus(apos));
+  return { dmg, kill, counter };
+}
+function targetsFor(u, pos) {
+  const m = new Map();
+  for (const e of S.units) if (e.owner !== u.owner && dist(pos, e.pos) <= UT[u.type].rng) m.set(e.pos, predict(u, e, pos));
+  return m;
+}
+function claim(i, p) {
+  const t = S.tiles[i], prev = t.owner;
+  if (prev === p) return;
+  t.owner = p;
+  if (t.town === 2) { t.town = 1; eliminate(prev, p); }
+  else if (t.town === 1) log(`${PLAYERS[p].name}占领了一座城镇。`);
+}
+function eliminate(loser, winner) {
+  S.players[loser].alive = false;
+  for (const t of S.tiles) if (t.owner === loser) t.owner = winner;
+  S.units = S.units.filter(u => u.owner !== loser);
+  log(`${PLAYERS[winner].name}攻陷了${PLAYERS[loser].name}的都城，${PLAYERS[loser].name}${loser === 0 ? '战败' : '覆灭'}。`);
+  if (!S.players[0].alive) S.over = 'lose';
+  else if (S.players.filter(p => p.alive).length === 1) S.over = 'win';
+}
+function spawnSpot(i, p) {
+  const occ = occMap();
+  if (!occ.has(i)) return i;
+  for (const n of NB[i]) if (n >= 0 && TCOST[S.tiles[n].t] && S.tiles[n].owner === p && !occ.has(n)) return n;
+  return -1;
+}
+function recruit(p, type, at) {
+  const spot = spawnSpot(at, p), pl = S.players[p];
+  if (spot < 0 || pl.gold < UT[type].cost) return false;
+  pl.gold -= UT[type].cost;
+  S.units.push({ id: S.nextId++, owner: p, type, pos: spot, hp: UT[type].hp, moved: true, acted: true });
+  dirty = true;
+  return true;
+}
+function beginTurn(p) {
+  const pl = S.players[p];
+  pl.gold = Math.max(0, pl.gold + income(p));
+  for (const u of S.units) if (u.owner === p) {
+    const t = S.tiles[u.pos];
+    if (t.owner === p) u.hp = Math.min(UT[u.type].hp, u.hp + (t.town ? 3 : 2));
+    u.moved = u.acted = false;
+  }
+  dirty = true;
+}
+
+/* ---------- 动作（带动画） ---------- */
+const sleep = ms => new Promise(r => setTimeout(r, reduced ? Math.min(ms, 20) : ms));
+function tween(u, from, to, ms) {
+  if (reduced) return Promise.resolve();
+  return new Promise(res => {
+    const t0 = performance.now(), [x0, y0] = center(from), [x1, y1] = center(to);
+    const f = now => {
+      const k = Math.min(1, (now - t0) / ms);
+      anim.set(u.id, { x: x0 + (x1 - x0) * k, y: y0 + (y1 - y0) * k }); dirty = true;
+      if (k < 1) requestAnimationFrame(f); else { anim.delete(u.id); res(); }
+    };
+    requestAnimationFrame(f);
+  });
+}
+async function doMove(u, path) {
+  for (const step of path) {
+    await tween(u, u.pos, step, 80);
+    u.pos = step;
+    claim(step, u.owner);
+    dirty = true;
+    if (S.over) break;
+  }
+  u.moved = true;
+}
+function floater(i, text, color) { floaters.push({ i, text, color, t0: performance.now() }); }
+async function attack(a, d) {
+  const pr = predict(a, d, a.pos);
+  d.hp -= pr.dmg; floater(d.pos, '-' + pr.dmg, '#ffd9cf');
+  if (d.hp <= 0) {
+    S.units = S.units.filter(u => u !== d);
+    log(`${PLAYERS[a.owner].name}的${UT[a.type].n}击溃了${PLAYERS[d.owner].name}的${UT[d.type].n}。`);
+  } else if (pr.counter) {
+    await sleep(160);
+    a.hp -= pr.counter; floater(a.pos, '-' + pr.counter, '#ffd9cf');
+    if (a.hp <= 0) {
+      S.units = S.units.filter(u => u !== a);
+      log(`${PLAYERS[a.owner].name}的${UT[a.type].n}进攻失利，被反击歼灭。`);
+    }
+  }
+  a.moved = a.acted = true; dirty = true;
+  await sleep(160);
+}
+
+/* ---------- 电脑对手 ---------- */
+function targetDist(p) {
+  const d = new Array(N).fill(99), q = [];
+  S.tiles.forEach((t, i) => { if (t.town && t.owner !== p) { d[i] = t.town === 2 ? 4 : 0; q.push(i); } });
+  for (const e of S.units) if (e.owner !== p) {
+    const v = S.tiles[e.pos].owner === p ? 0 : 3;
+    if (d[e.pos] > v) { d[e.pos] = v; q.push(e.pos); }
+  }
+  while (q.length) {
+    const cur = q.shift(), step = TCOST[S.tiles[cur].t] || 1;
+    for (const n of NB[cur]) if (n >= 0 && TCOST[S.tiles[n].t] && d[cur] + step < d[n]) { d[n] = d[cur] + step; q.push(n); }
+  }
+  return d;
+}
+async function aiTurn(p) {
+  const pl = S.players[p], cap = pl.cap;
+  let td = targetDist(p);
+  const mine = S.units.filter(u => u.owner === p).sort((a, b) => td[a.pos] - td[b.pos]);
+  for (const u of mine) {
+    if (S.over) return;
+    if (!S.units.includes(u)) continue;
+    td = targetDist(p);
+    const occ = occMap(), res = reachable(u), enemies = S.units.filter(e => e.owner !== p);
+    const threatened = enemies.some(e => dist(e.pos, cap) <= 3);
+    let best = null;
+    for (const [i] of res) {
+      const o = occ.get(i);
+      if (o && o !== u) continue;
+      const t = S.tiles[i];
+      let sc = -td[i] * 2 + tbonus(i) + Math.random() * 0.5;
+      if (t.owner !== p) sc += t.town === 2 ? 200 : t.town === 1 ? 40 : t.owner >= 0 ? 4 : 3;
+      if (i === cap) sc += threatened ? 35 : 12;
+      let tgt = null, bs = 0;
+      for (const e of enemies) {
+        if (dist(i, e.pos) > UT[u.type].rng) continue;
+        const pr = predict(u, e, i);
+        let s = pr.dmg * 4 + (pr.kill ? 25 : 0) - pr.counter * 3;
+        if (pr.counter >= u.hp) s -= 30;
+        if (dist(e.pos, cap) <= 2) s += 10;
+        if (S.tiles[e.pos].town) s += 5;
+        if (s > bs) { bs = s; tgt = e; }
+      }
+      sc += bs;
+      if (!best || sc > best.sc) best = { sc, i, tgt };
+    }
+    if (best.i !== u.pos) await doMove(u, pathTo(res, best.i));
+    if (S.over) return;
+    if (best.tgt && S.units.includes(best.tgt) && S.units.includes(u) && dist(u.pos, best.tgt.pos) <= UT[u.type].rng) await attack(u, best.tgt);
+    u.moved = u.acted = true;
+    ui(); await sleep(70);
+  }
+  // 招兵：保证军饷付得起
+  const bases = S.tiles.map((t, i) => (t.town && t.owner === p ? i : -1)).filter(i => i >= 0)
+    .sort((a, b) => td[a] - td[b]);
+  const weights = { inf: 4, arc: 3, cav: 2, shd: 2 };
+  for (let guard = 0; guard < 8; guard++) {
+    if (income(p) < 2 || S.units.filter(u => u.owner === p).length >= 14) break;
+    const can = Object.keys(UT).filter(k => UT[k].cost <= pl.gold);
+    const base = bases.find(b => spawnSpot(b, p) >= 0);
+    if (!can.length || base === undefined) break;
+    let r = Math.random() * can.reduce((s, k) => s + weights[k], 0), pick = can[0];
+    for (const k of can) { r -= weights[k]; if (r <= 0) { pick = k; break; } }
+    recruit(p, pick, base);
+  }
+  ui(); await sleep(120);
+}
+
+/* ---------- 回合流程 ---------- */
+async function endTurn() {
+  if (busy || S.over || S.cur !== 0) return;
+  busy = true; clearSel(); ui();
+  for (;;) {
+    do { S.cur = (S.cur + 1) % S.players.length; if (S.cur === 0) S.turn++; } while (!S.players[S.cur].alive);
+    beginTurn(S.cur);
+    if (S.cur === 0) break;
+    ui();
+    await aiTurn(S.cur);
+    if (S.over) break;
+  }
+  busy = false;
+  if (!S.over) log(`第 ${S.turn} 回合，轮到你了。`);
+  save(); ui();
+}
+
+/* ---------- 玩家操作 ---------- */
+function clearSel() { sel = { unit: null, tile: -1 }; reach = new Map(); targets = new Map(); dirty = true; }
+function selectUnit(u) {
+  sel = { unit: u.id, tile: u.pos };
+  reach = u.moved ? new Map() : reachable(u);
+  const occ = occMap();
+  for (const i of [...reach.keys()]) if (occ.has(i)) reach.delete(i);
+  targets = targetsFor(u, u.pos);
+  dirty = true;
+}
+async function onTile(i) {
+  if (busy || !S || S.over || S.cur !== 0) return;
+  const u = S.units.find(x => x.id === sel.unit), here = unitAt(i);
+  if (u && targets.has(i) && here) {
+    busy = true; const a = u; clearSel();
+    await attack(a, here);
+    busy = false;
+  } else if (u && reach.has(i)) {
+    busy = true; const path = pathTo(reachable(u), i); clearSel();
+    await doMove(u, path);
+    busy = false;
+    if (!S.over && S.units.includes(u)) {
+      if (targetsFor(u, u.pos).size) selectUnit(u); else u.acted = true;
+    }
+  } else if (here && here.owner === 0 && !here.acted && here.id !== sel.unit) {
+    selectUnit(here);
+  } else if (sel.tile === i && !u) {
+    clearSel();
+  } else {
+    clearSel(); sel.tile = i;
+  }
+  save(); ui();
+}
+function nextUnit() {
+  if (busy || S.over) return;
+  const list = S.units.filter(u => u.owner === 0 && !u.acted);
+  if (!list.length) return;
+  const k = list.findIndex(u => u.id === sel.unit);
+  selectUnit(list[(k + 1) % list.length]); ui();
+}
+
+/* ---------- 存档 ---------- */
+function save() {
+  if (!S || S.cur !== 0 || busy) return;
+  lastSave = JSON.stringify(S);
+  try { localStorage.setItem(SAVE_KEY, lastSave); } catch (e) { /* 存不了也能玩 */ }
+}
+function load(raw) {
+  try {
+    const s = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!s || s.v !== 1 || s.cur !== 0 || !Array.isArray(s.tiles) || s.tiles.length !== N) return false;
+    S = s; lastSave = JSON.stringify(S); logs = []; clearSel();
+    log(S.over ? '上一局已经结束。' : `读取存档：第 ${S.turn} 回合。`);
+    return true;
+  } catch (e) { return false; }
+}
+
+/* ---------- 界面 ---------- */
+function log(msg) { logs.unshift(msg); logs.length = Math.min(logs.length, 5); }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function ui() {
+  dirty = true;
+  const me = S.players[0], inc = income(0);
+  $('sTurn').textContent = S.turn;
+  $('sGold').textContent = me.gold;
+  $('sInc').textContent = (inc >= 0 ? '+' : '') + inc;
+  $('chips').innerHTML = S.players.map((pl, p) => {
+    const land = S.tiles.filter(t => t.owner === p).length, army = S.units.filter(u => u.owner === p).length;
+    return `<span class="chip${p === S.cur && !S.over ? ' on' : ''}${pl.alive ? '' : ' dead'}" style="--c:${PLAYERS[p].color}"><i></i>${PLAYERS[p].name} · ${land} 地 ${army} 兵</span>`;
+  }).join('');
+  $('log').innerHTML = logs.map(l => `<li>${esc(l)}</li>`).join('');
+
+  const myTurn = S.cur === 0 && !busy && !S.over;
+  const idle = S.units.filter(u => u.owner === 0 && !u.acted).length;
+  $('endTurn').disabled = !myTurn;
+  $('endTurn').textContent = myTurn ? '结束回合' : S.over ? '已结束' : '敌方行动中…';
+  $('nextUnit').disabled = !myTurn || !idle;
+  $('nextUnit').textContent = idle ? `下一个单位（${idle}）` : '全员已行动';
+
+  // 选中信息
+  let html = '';
+  const u = sel.tile >= 0 ? unitAt(sel.tile) : null, t = sel.tile >= 0 ? S.tiles[sel.tile] : null;
+  if (u) {
+    const T = UT[u.type];
+    html += `<h2 style="color:${PLAYERS[u.owner].color}">${PLAYERS[u.owner].name}的${T.n}</h2><p>${T.d}。${u.owner === 0 ? (u.acted ? '本回合已行动。' : u.moved ? '已移动，还可以进攻。' : '点亮起的格子移动，点红圈进攻。') : ''}</p>
+      <div class="kv"><div><span>生命</span>${u.hp}/${T.hp}</div><div><span>攻击</span>${T.atk}</div><div><span>防御</span>${T.def}+${tbonus(u.pos)}</div><div><span>${T.rng > 1 ? '射程' : '移动'}</span>${T.rng > 1 ? T.rng : T.mv}</div></div>`;
+  } else if (t) {
+    const who = t.owner >= 0 ? PLAYERS[t.owner].name + '的' : '无主的';
+    html += `<h2>${who}${t.town === 2 ? '都城' : t.town === 1 ? '城镇' : TNAME[t.t]}</h2><p>${t.town === 2 ? '每回合 6 金，防御 +2。失守即灭国。' : t.town === 1 ? '每回合 3 金，防御 +1，可以招兵。' : t.t === 'F' ? '进入耗 2 点移动力，防御 +1。' : TCOST[t.t] ? '一马平川，无遮无拦。' : '无法通行。'}</p>`;
+  } else {
+    html += `<h2>军令</h2><p>${S.over ? '本局已结束，可以在下方重新开始。' : '点自己的单位下达命令，点自己的都城或城镇招兵。'}</p>`;
+  }
+  if (t && t.town && t.owner === 0) {
+    const room = spawnSpot(sel.tile, 0) >= 0;
+    html += `<div class="recruit">` + Object.keys(UT).map(k => {
+      const T = UT[k], ok = myTurn && room && me.gold >= T.cost;
+      return `<button type="button" data-recruit="${k}" ${ok ? '' : 'disabled'}><b>${T.n}<em>${T.cost} 金</em></b><small>血${T.hp} 攻${T.atk} 防${T.def} 移${T.mv}${T.rng > 1 ? ' 射' + T.rng : ''}</small></button>`;
+    }).join('') + `</div>` + (room ? '' : `<p style="margin-top:6px">城里和周围都站满了，先把部队调开。</p>`);
+  }
+  $('info').innerHTML = html;
+
+  const b = $('banner');
+  b.hidden = !S.over;
+  if (S.over) {
+    b.className = 'banner ' + S.over;
+    $('bannerTitle').textContent = S.over === 'win' ? '天下一统' : '都城陷落';
+    $('bannerText').textContent = S.over === 'win' ? `你用 ${S.turn} 个回合平定了四方。` : `你坚持了 ${S.turn} 个回合。`;
+  }
+}
+
+/* ---------- 绘制 ---------- */
+const TCOL = { P: '#6f8f58', F: '#476f48', M: '#77746a', W: '#2e5f86' };
+function hexPath(x, y, r) {
+  ctx.beginPath();
+  for (let k = 0; k < 6; k++) { const a = Math.PI / 180 * (60 * k - 30); ctx.lineTo(x + r * Math.cos(a), y + r * Math.sin(a)); }
+  ctx.closePath();
+}
+function tri(x, y, w, h) { ctx.beginPath(); ctx.moveTo(x, y - h); ctx.lineTo(x + w, y); ctx.lineTo(x - w, y); ctx.closePath(); ctx.fill(); }
+function draw() {
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = '#0c1616'; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (!S) return;
+  const s = size;
+  ctx.lineJoin = 'round';
+  // 地形
+  for (let i = 0; i < N; i++) {
+    const t = S.tiles[i], [x, y] = center(i);
+    hexPath(x, y, s * 0.97); ctx.fillStyle = TCOL[t.t]; ctx.fill();
+    if (t.owner >= 0) { ctx.globalAlpha = 0.38; ctx.fillStyle = PLAYERS[t.owner].color; ctx.fill(); ctx.globalAlpha = 1; }
+    if (t.t === 'F') { ctx.fillStyle = '#254a2e'; tri(x - s * .3, y + s * .3, s * .2, s * .48); tri(x + s * .28, y + s * .34, s * .2, s * .48); tri(x, y + s * .08, s * .22, s * .52); }
+    else if (t.t === 'M') { ctx.fillStyle = '#55524a'; tri(x - s * .2, y + s * .4, s * .42, s * .7); ctx.fillStyle = '#9a968a'; tri(x + s * .22, y + s * .4, s * .36, s * .88); ctx.fillStyle = '#e6e3d8'; tri(x + s * .22, y - s * .26, s * .09, s * .22); }
+    else if (t.t === 'W') {
+      ctx.strokeStyle = 'rgba(190,225,255,.45)'; ctx.lineWidth = Math.max(1, s * .06);
+      for (const dy of [-.18, .2]) { ctx.beginPath(); ctx.moveTo(x - s * .4, y + s * dy); ctx.quadraticCurveTo(x - s * .2, y + s * (dy - .14), x, y + s * dy); ctx.quadraticCurveTo(x + s * .2, y + s * (dy + .14), x + s * .4, y + s * dy); ctx.stroke(); }
+    }
+    if (t.town) {
+      hexPath(x, y, s * 0.8); ctx.strokeStyle = t.town === 2 ? '#f2cf62' : '#efe6cc'; ctx.lineWidth = t.town === 2 ? Math.max(2, s * .12) : Math.max(1.2, s * .07); ctx.stroke();
+      ctx.fillStyle = '#f3ead0';
+      if (t.town === 2) {
+        ctx.fillRect(x - s * .34, y - s * .12, s * .68, s * .42);
+        for (const dx of [-.34, -.08, .18]) ctx.fillRect(x + s * dx, y - s * .3, s * .16, s * .2);
+        ctx.fillStyle = '#5a4a2a'; ctx.fillRect(x - s * .08, y + s * .06, s * .16, s * .24);
+      } else {
+        ctx.fillRect(x - s * .24, y - s * .05, s * .48, s * .32); tri(x, y - s * .05, s * .34, s * .3);
+      }
+    }
+  }
+  // 领地边界
+  ctx.lineCap = 'round';
+  for (let i = 0; i < N; i++) {
+    const o = S.tiles[i].owner; if (o < 0) continue;
+    const [x, y] = center(i);
+    ctx.strokeStyle = PLAYERS[o].color; ctx.lineWidth = Math.max(1.5, s * .1);
+    for (let k = 0; k < 6; k++) {
+      const n = NB[i][k];
+      if (n >= 0 && S.tiles[n].owner === o) continue;
+      const a0 = Math.PI / 180 * (60 * k - 30), a1 = Math.PI / 180 * (60 * k + 30), r = s * .9;
+      ctx.beginPath(); ctx.moveTo(x + r * Math.cos(a0), y + r * Math.sin(a0)); ctx.lineTo(x + r * Math.cos(a1), y + r * Math.sin(a1)); ctx.stroke();
+    }
+  }
+  // 可移动与可攻击标记
+  for (const i of reach.keys()) {
+    const [x, y] = center(i);
+    hexPath(x, y, s * .97); ctx.fillStyle = 'rgba(255,255,255,.2)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, s * .13, 0, 7); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fill();
+  }
+  if (sel.tile >= 0) { const [x, y] = center(sel.tile); hexPath(x, y, s * .93); ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(2, s * .1); ctx.stroke(); }
+  // 单位
+  const fs = Math.max(10, s * .62);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const u of S.units) {
+    const a = anim.get(u.id), [cx, cy] = a ? [a.x, a.y] : center(u.pos), T = UT[u.type];
+    const done = u.acted && u.owner === S.cur && !S.over;
+    ctx.globalAlpha = done ? 0.6 : 1;
+    ctx.beginPath(); ctx.arc(cx, cy, s * .56, 0, 7);
+    ctx.fillStyle = PLAYERS[u.owner].color; ctx.fill();
+    ctx.lineWidth = Math.max(1.5, s * .09); ctx.strokeStyle = '#0c1616'; ctx.stroke();
+    ctx.fillStyle = '#0c1616'; ctx.font = `700 ${fs}px "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif`;
+    ctx.fillText(T.ch, cx, cy + fs * .04);
+    ctx.globalAlpha = 1;
+    if (u.hp < T.hp) {
+      const w = s * 1.0, h = Math.max(3, s * .16), bx = cx - w / 2, by = cy + s * .5;
+      ctx.fillStyle = '#0c1616'; ctx.fillRect(bx - 1, by - 1, w + 2, h + 2);
+      const k = u.hp / T.hp; ctx.fillStyle = k > .5 ? '#7fd66b' : k > .25 ? '#f0c14b' : '#ef6a55'; ctx.fillRect(bx, by, w * k, h);
+    }
+  }
+  // 进攻目标
+  for (const [i, pr] of targets) {
+    const [x, y] = center(i);
+    ctx.beginPath(); ctx.arc(x, y, s * .72, 0, 7); ctx.strokeStyle = '#ff4d3a'; ctx.lineWidth = Math.max(2, s * .13); ctx.stroke();
+    label(pr.kill ? '斩' : '-' + pr.dmg, x + s * .5, y - s * .58, '#fff', '#c5301f', fs * .8);
+  }
+  // 飘字
+  const now = performance.now();
+  for (let k = floaters.length - 1; k >= 0; k--) {
+    const f = floaters[k], age = (now - f.t0) / 900;
+    if (age >= 1) { floaters.splice(k, 1); continue; }
+    const [x, y] = center(f.i);
+    ctx.globalAlpha = 1 - age * age;
+    label(f.text, x, y - s * (.5 + age * .9), f.color, '#7a1c12', fs);
+    ctx.globalAlpha = 1;
+  }
+}
+function label(text, x, y, fg, bg, px) {
+  ctx.font = `700 ${px}px "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif`;
+  const w = ctx.measureText(text).width + px * .6, h = px * 1.3;
+  ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - w / 2, y - h / 2, w, h, h / 2) : ctx.rect(x - w / 2, y - h / 2, w, h); ctx.fill();
+  ctx.fillStyle = fg; ctx.fillText(text, x, y + px * .05);
+}
+function resize() {
+  const w = $('mapwrap').clientWidth; if (!w) return;
+  size = w / (S3 * (COLS + 0.5));
+  const h = size * (1.5 * ROWS + 0.5), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  cv.style.height = h + 'px';
+  dirty = true;
+}
+function frame() {
+  if (dirty || floaters.length) { dirty = false; draw(); }
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 事件 ---------- */
+cv.addEventListener('click', e => {
+  const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  let best = -1, bd = size * size;
+  for (let i = 0; i < N; i++) { const [cx, cy] = center(i), d = (cx - x) ** 2 + (cy - y) ** 2; if (d < bd) { bd = d; best = i; } }
+  if (best >= 0) onTile(best);
+});
+$('info').addEventListener('click', e => {
+  const b = e.target.closest('[data-recruit]');
+  if (!b || busy || S.over || S.cur !== 0) return;
+  const type = b.dataset.recruit;
+  if (recruit(0, type, sel.tile)) { log(`招募了一队${UT[type].n}，下回合可以行动。`); save(); ui(); }
+});
+$('endTurn').addEventListener('click', endTurn);
+$('nextUnit').addEventListener('click', nextUnit);
+let armed = 0;
+function restart() { newGame(+$('optOpp').value, +$('optDiff').value); }
+$('newGame').addEventListener('click', () => {
+  if (busy) return;
+  const fresh = S.over || (S.turn === 1);
+  if (fresh || Date.now() - armed < 4000) { armed = 0; $('newGame').textContent = '重新开始'; restart(); }
+  else { armed = Date.now(); $('newGame').textContent = '再点一次，放弃当前这局'; setTimeout(() => { if (armed) { armed = 0; $('newGame').textContent = '重新开始'; } }, 4000); }
+});
+$('bannerBtn').addEventListener('click', restart);
+document.addEventListener('keydown', e => {
+  if (/^(SELECT|BUTTON|INPUT|SUMMARY)$/.test(e.target.tagName)) return;
+  if (e.key === ' ') { e.preventDefault(); nextUnit(); }
+  else if (e.key === 'Enter') endTurn();
+  else if (e.key === 'Escape') { clearSel(); ui(); }
+});
+new ResizeObserver(resize).observe($('mapwrap'));
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { dirty = true; });
+
+function start(data) {
+  let ok = data && data.save && load(data.save);
+  if (!ok) { let raw = null; try { raw = localStorage.getItem(SAVE_KEY); } catch (e) { /* 忽略 */ } ok = raw && load(raw); }
+  if (!ok) restart();
+  resize(); ui(); requestAnimationFrame(frame);
+}
+const hot = window.claude && window.claude.hot;
+if (hot && hot.snapshot) hot.snapshot(() => ({ save: lastSave }));
+if (hot && hot.ready) hot.ready(start); else start((hot && hot.data) || {});
+})();
+</script>
+</body>
+</html>
