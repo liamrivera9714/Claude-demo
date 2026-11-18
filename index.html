@@ -25,6 +25,7 @@
   --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
+html { scrollbar-gutter: stable; }
 [hidden] { display: none !important; }
 body {
   background: var(--bg);
@@ -32,11 +33,11 @@ body {
   font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.55;
-  padding-block: 14px 28px;
+  padding-block: 14px 16px;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
-.app { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+.app { --map-max: calc((100vh - 96px) * 1.17); max-width: min(1180px, calc(var(--map-max) + 320px)); margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
 .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 20px; }
 h1 { font-family: var(--font-display); font-weight: 400; font-size: 30px; letter-spacing: .12em; margin: 0; color: var(--brass); line-height: 1.1; }
 .stats { display: flex; flex-wrap: wrap; gap: 4px 18px; font-variant-numeric: tabular-nums; color: var(--muted); }
@@ -47,8 +48,8 @@ h1 { font-family: var(--font-display); font-weight: 400; font-size: 30px; letter
 .chip.on { color: var(--fg); border-color: var(--c); }
 .chip.dead { text-decoration: line-through; opacity: .5; }
 
-.board { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
-.mapwrap { position: relative; width: 100%; max-width: calc((100vh - 110px) * 1.17); min-width: 0; justify-self: center; }
+.board { display: grid; grid-template-columns: minmax(0, var(--map-max)) 300px; justify-content: center; gap: 20px; align-items: start; }
+.mapwrap { position: relative; width: 100%; min-width: 0; }
 canvas { display: block; width: 100%; touch-action: manipulation; cursor: pointer; border-radius: 6px; }
 .banner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(10, 18, 18, .78); border-radius: 6px; text-align: center; padding: 16px; }
 .banner h2 { font-family: var(--font-display); font-weight: 400; font-size: 44px; letter-spacing: .2em; margin: 0; color: var(--brass); }
@@ -58,10 +59,27 @@ canvas { display: block; width: 100%; touch-action: manipulation; cursor: pointe
 .panel { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .box { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px; }
 .box h2 { font-family: var(--font-display); font-weight: 400; font-size: 18px; letter-spacing: .08em; margin: 0 0 6px; }
+.panel .box { padding: 10px 12px; }
 .box p { margin: 0; color: var(--muted); }
+/* 信息框固定高度：无论选中什么，面板和整页高度都不变，地图不会跟着缩放 */
+#info { height: var(--info-h, 276px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .kv { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; font-variant-numeric: tabular-nums; }
 .kv div { background: var(--surface-2); border-radius: 4px; padding: 4px 6px; text-align: center; }
 .kv span { display: block; font-size: 11px; color: var(--muted); }
+.ledger { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin-top: 10px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ledger div { display: flex; justify-content: space-between; color: var(--muted); border-bottom: 1px dashed var(--line); padding-bottom: 2px; }
+.ledger b { color: var(--fg); font-weight: 500; }
+.ledger b.neg { color: var(--danger); }
+.ledger .sum { grid-column: 1 / -1; border-bottom: 0; padding-top: 2px; }
+.ledger .sum span, .ledger .sum b { color: var(--brass); font-weight: 700; }
+.forecast { margin-top: 10px; padding: 8px 10px; border-radius: 5px; background: var(--surface-2); border-left: 3px solid var(--danger); font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
+.forecast b { font-size: 13px; }
+.forecast small { color: var(--brass); }
+.fc-row { display: grid; grid-template-columns: 2.4em 1fr 5.5em; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.fc-row span { color: var(--muted); }
+.fc-row i { height: 6px; border-radius: 3px; background: linear-gradient(90deg, #7fd66b calc(var(--k) * 100%), #ef6a55 calc(var(--k) * 100%) calc(var(--k0) * 100%), #0c1616 calc(var(--k0) * 100%)); }
+.fc-row em { font-style: normal; text-align: right; }
+.fc-row em.bad { color: var(--danger); font-weight: 700; }
 .recruit { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
 button { font: inherit; color: var(--fg); background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 8px 10px; cursor: pointer; }
 button:hover:not(:disabled) { border-color: var(--brass); }
@@ -72,23 +90,24 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 .recruit button b { display: flex; justify-content: space-between; font-weight: 700; }
 .recruit button b em { font-style: normal; color: var(--brass); font-variant-numeric: tabular-nums; }
 .recruit button small { color: var(--muted); font-size: 11px; }
-.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.actions .primary { grid-column: 1 / -1; }
+.actions { display: grid; grid-template-columns: 1fr .72fr 1.28fr; gap: 6px; }
+.actions button { padding: 9px 4px; font-size: 13px; white-space: nowrap; }
 .primary { background: var(--brass); border-color: var(--brass); color: #1b1608; font-weight: 700; }
 .primary:hover:not(:disabled) { filter: brightness(1.08); }
-.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); min-height: 5.6em; }
+.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; font-size: 12px; line-height: 1.6; color: var(--muted); height: 8.4em; overflow: hidden; }
+.log li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
 .log li:first-child { color: var(--fg); }
 details summary { cursor: pointer; font-family: var(--font-display); font-size: 16px; letter-spacing: .08em; }
 details ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
 details li + li { margin-top: 3px; }
-.setup { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.setup { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
 .setup label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
 select { font: inherit; color: var(--fg); background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 6px; }
 .setup button { grid-column: 1 / -1; }
 
 @media (max-width: 860px) {
   .board { grid-template-columns: minmax(0, 1fr); }
-  .mapwrap { max-width: 100%; }
+  .app { --map-max: 100%; max-width: none; }
   h1 { font-size: 26px; }
   .chips { margin-left: 0; }
 }
@@ -119,9 +138,9 @@ select { font: inherit; color: var(--fg); background: var(--surface-2); border: 
     <aside class="panel">
       <section class="box" id="info" aria-live="polite"></section>
       <div class="actions">
-        <button id="nextUnit" type="button">下一个单位</button>
-        <button id="undo" type="button">悔棋</button>
-        <button id="endTurn" class="primary" type="button">结束回合</button>
+        <button id="nextUnit" type="button" title="切换到下一个待命单位（空格）">下一个</button>
+        <button id="undo" type="button" title="撤销上一步（Z）">悔棋</button>
+        <button id="endTurn" class="primary" type="button" title="回车">结束回合</button>
       </div>
       <section class="box">
         <h2>战报</h2>
@@ -144,8 +163,8 @@ select { font: inherit; color: var(--fg); background: var(--surface-2); border: 
           <li>键盘：空格切换下一个单位，回车结束回合，Z 悔棋，Esc 取消选择。</li>
         </ul>
       </details>
-      <section class="box">
-        <h2>新开一局</h2>
+      <details class="box" id="setupBox">
+        <summary>新开一局</summary>
         <div class="setup">
           <label for="optOpp">对手数量
             <select id="optOpp"><option value="1">1 个</option><option value="2" selected>2 个</option><option value="3">3 个</option></select>
@@ -155,7 +174,7 @@ select { font: inherit; color: var(--fg); background: var(--surface-2); border: 
           </label>
           <button id="newGame" type="button">重新开始</button>
         </div>
-      </section>
+      </details>
     </aside>
   </div>
 </div>
@@ -266,12 +285,16 @@ function newGame(opp, diff) {
 const occMap = () => new Map(S.units.map(u => [u.pos, u]));
 const unitAt = i => S.units.find(u => u.pos === i);
 const tbonus = i => { const t = S.tiles[i]; return (t.t === 'F' ? 1 : 0) + t.town; };
+function incomeParts(p) {
+  let towns = 0, land = 0, farms = 0;
+  for (const t of S.tiles) if (t.owner === p) { land++; if (t.town === 1) towns++; if (t.farm) farms++; }
+  return { cap: 6, towns, town: 3 * towns, land: Math.floor(land / 4), farms, farm: FARM_INC * farms, upkeep: S.units.filter(u => u.owner === p).length };
+}
 function income(p) {
-  let towns = 0, land = 0;
-  for (const t of S.tiles) if (t.owner === p) { land++; if (t.town === 1) towns++; }
-  let gross = 6 + 3 * towns + Math.floor(land / 4) + FARM_INC * S.tiles.filter(t => t.owner === p && t.farm).length;
+  const q = incomeParts(p);
+  let gross = q.cap + q.town + q.land + q.farm;
   if (p !== 0) gross = Math.round(gross * S.diff);
-  return gross - S.units.filter(u => u.owner === p).length;
+  return gross - q.upkeep;
 }
 function reachable(u) {
   const occ = occMap(), mv = UT[u.type].mv, res = new Map([[u.pos, { cost: 0, prev: -1 }]]), open = [u.pos];
@@ -616,7 +639,7 @@ function ui() {
     const land = S.tiles.filter(t => t.owner === p).length, army = S.units.filter(u => u.owner === p).length;
     return `<span class="chip${p === S.cur && !S.over ? ' on' : ''}${pl.alive ? '' : ' dead'}" style="--c:${PLAYERS[p].color}"><i></i>${PLAYERS[p].name} · ${land} 地 ${army} 兵</span>`;
   }).join('');
-  $('log').innerHTML = logs.map(l => `<li>${esc(l)}</li>`).join('');
+  $('log').innerHTML = logs.map(l => `<li title="${esc(l)}">${esc(l)}</li>`).join('');
 
   const myTurn = S.cur === 0 && !busy && !S.over;
   if (myTurn) alarm = S.units.some(e => e.owner !== 0 && threatOf(e).has(S.players[0].cap));
@@ -625,7 +648,7 @@ function ui() {
   $('endTurn').disabled = !myTurn;
   $('endTurn').textContent = myTurn ? '结束回合' : S.over ? '已结束' : '敌方行动中…';
   $('nextUnit').disabled = !myTurn || !idle;
-  $('nextUnit').textContent = idle ? `下一个单位（${idle}）` : '全员已行动';
+  $('nextUnit').textContent = idle ? `下一个（${idle}）` : '已全部行动';
   $('undo').disabled = !myTurn || !undoStack.length;
   $('mute').textContent = muted ? '音效：关' : '音效：开';
 
@@ -641,7 +664,17 @@ function ui() {
     const who = t.owner >= 0 ? PLAYERS[t.owner].name + '的' : '无主的';
     html += `<h2>${who}${t.town === 2 ? '都城' : t.town === 1 ? '城镇' : t.farm ? '农田' : TNAME[t.t]}</h2><p>${t.farm ? `每回合 ${FARM_INC} 金。敌军踏入会被劫掠一空。` : t.town === 2 ? '每回合 6 金，防御 +2。失守即灭国。' : t.town === 1 ? '每回合 3 金，防御 +1，可以招兵。' : t.t === 'F' ? '进入耗 2 点移动力，防御 +1。' : TCOST[t.t] ? '一马平川，无遮无拦。' : '无法通行。'}</p>`;
   } else {
-    html += `<h2>军令</h2><p>${S.over ? '本局已结束，可以在下方重新开始。' : '点自己的单位下达命令，点自己的都城或城镇招兵。'}</p>`;
+    const q = incomeParts(0);
+    html += `<h2>军令</h2><p>${S.over ? '本局已结束，可以在下方重新开始。' : '点自己的单位下达命令，点自己的都城或城镇招兵。'}</p>
+      <div class="ledger"><div><span>都城</span><b>+${q.cap}</b></div><div><span>城镇 ×${q.towns}</span><b>+${q.town}</b></div><div><span>领地</span><b>+${q.land}</b></div><div><span>农田 ×${q.farms}</span><b>+${q.farm}</b></div><div><span>军饷 ×${q.upkeep}</span><b class="neg">−${q.upkeep}</b></div><div class="sum"><span>每回合合计</span><b>${inc >= 0 ? '+' : ''}${inc}</b></div></div>`;
+  }
+  const fc = u && u.owner === 0 && targets.get(hover), foe = fc && unitAt(hover);
+  if (fc && foe) {
+    const left = u.hp - fc.counter, fT = UT[foe.type];
+    html += `<div class="forecast"><b>进攻${PLAYERS[foe.owner].name}的${fT.n}</b>
+      <div class="fc-row"><span>敌方</span><i style="--k:${Math.max(0, foe.hp - fc.dmg) / fT.hp};--k0:${foe.hp / fT.hp}"></i><em>${fc.kill ? '击溃' : `${foe.hp}→${foe.hp - fc.dmg}`}</em></div>
+      <div class="fc-row"><span>我方</span><i style="--k:${Math.max(0, left) / UT[u.type].hp};--k0:${u.hp / UT[u.type].hp}"></i><em${left <= 0 ? ' class="bad"' : ''}>${fc.counter ? (left <= 0 ? '会被反杀' : `${u.hp}→${left}`) : '无反击'}</em></div>
+      ${COUNTER[u.type] === foe.type ? '<small>兵种克制，攻击 +2</small>' : COUNTER[foe.type] === u.type && fc.counter ? '<small>对方克制我方，反击 +2</small>' : ''}</div>`;
   }
   if (t && t.town && t.owner === 0) {
     const room = spawnSpot(sel.tile, 0) >= 0;
@@ -653,7 +686,7 @@ function ui() {
   if (t && t.owner === 0 && t.t === 'P' && !t.town && !t.farm) {
     html += canFarm(0, sel.tile)
       ? `<div class="recruit" style="grid-template-columns:1fr"><button type="button" data-farm="1" ${myTurn && me.gold >= FARM_COST ? '' : 'disabled'}><b>开垦农田<em>${FARM_COST} 金</em></b><small>每回合 +${FARM_INC} 金，被敌军踏入会被劫掠</small></button></div>`
-      : `<p style="margin-top:6px">农田只能开在自己都城或城镇的邻格。</p>`;
+      : u ? '' : `<p style="margin-top:6px">农田只能开在自己都城或城镇的邻格。</p>`;
   }
   $('info').innerHTML = html;
 
@@ -764,7 +797,8 @@ function draw() {
   for (const [i, pr] of targets) {
     const [x, y] = center(i);
     ctx.beginPath(); ctx.arc(x, y, s * .72, 0, 7); ctx.strokeStyle = '#ff4d3a'; ctx.lineWidth = Math.max(2, s * .13); ctx.stroke();
-    label(pr.kill ? '斩' : '-' + pr.dmg, x + s * .5, y - s * .58, '#fff', '#c5301f', fs * .8);
+    label(pr.kill ? '斩' : '-' + pr.dmg, x, y - s * .74, '#fff', '#c5301f', fs * .78);
+    if (pr.counter) label('反' + pr.counter, x + s * .5, y + s * .5, '#1b1608', '#f0c14b', fs * .62);
   }
   // 飘字
   const now = performance.now();
@@ -779,7 +813,8 @@ function draw() {
 }
 function label(text, x, y, fg, bg, px) {
   ctx.font = `700 ${px}px "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif`;
-  const w = ctx.measureText(text).width + px * .6, h = px * 1.3;
+  const w = ctx.measureText(text).width + px * .6, h = px * 1.3, W = cv.width / (window.devicePixelRatio || 1);
+  x = Math.min(Math.max(x, w / 2 + 2), W - w / 2 - 2); y = Math.max(y, h / 2 + 2);
   ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - w / 2, y - h / 2, w, h, h / 2) : ctx.rect(x - w / 2, y - h / 2, w, h); ctx.fill();
   ctx.fillStyle = fg; ctx.fillText(text, x, y + px * .05);
 }
@@ -824,9 +859,11 @@ $('mute').addEventListener('click', () => {
   ui();
 });
 cv.addEventListener('mousemove', e => {
-  const i = tileAt(e); if (i !== hover) { hover = i; dirty = true; }
+  const i = tileAt(e); if (i === hover) return;
+  const was = targets.has(hover); hover = i; dirty = true;
+  if (was || targets.has(i)) ui();
 });
-cv.addEventListener('mouseleave', () => { hover = -1; dirty = true; });
+cv.addEventListener('mouseleave', () => { const was = targets.has(hover); hover = -1; dirty = true; if (was) ui(); });
 $('endTurn').addEventListener('click', endTurn);
 $('nextUnit').addEventListener('click', nextUnit);
 let armed = 0;
